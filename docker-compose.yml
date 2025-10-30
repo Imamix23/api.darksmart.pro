@@ -1,0 +1,34 @@
+version: '3.9'
+services:
+  app:
+    build: .
+    container_name: darksmart-api
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=development
+      - PORT=5050
+      - DATABASE_URL=postgres://postgres:postgres@db:5432/darksmart
+    ports:
+      - "5050:5050"
+    volumes:
+      - .:/app
+      - /app/node_modules
+    depends_on:
+      - db
+    command: npm run dev
+
+  db:
+    image: postgres:16-alpine
+    container_name: darksmart-db
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=darksmart
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+volumes:
+  pgdata:
