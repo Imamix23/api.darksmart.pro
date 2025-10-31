@@ -1,135 +1,219 @@
 const express = require('express');
+const bcrypt = require('bcryptjs');
 const { body, validationResult } = require('express-validator');
-const { v4: uuidv4 } = require('uuid');
-const { query } = require('../db');
-const { hashPassword, comparePassword } = require('../utils/hash');
-const { signAccessToken, signRefreshToken, verifyToken } = require('../utils/jwt');
-const { OAuth2Client } = require('google-auth-library');
+const { query } = require('../database');
+const { generateToken, verifyToken } = require('../utils/jwt');
+const { requireAuth } = require('../middleware/auth');
 
 const router = express.Router();
 
-const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
-
+// Signup endpoint
 router.post(
   '/signup',
-  [body('email').isEmail(), body('password').isLength({ min: 8 }), body('name').optional().isString()],
-  async (req, res, next) => {
+  [
+    body('email').isEmail().normalizeEmail(),
+    body('password').isLength({ min: 8 }).withMessage('Password must be at least 8 characters'),
+    body('name').trim().notEmpty().withMessage('Name is required'),
+  ],
+  async (req, res) => {
     try {
       const errors = validationResult(req);
-      if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
 
       const { email, password, name } = req.body;
-      const lowerEmail = String(email).toLowerCase();
-      const existing = await query('SELECT id FROM users WHERE email = $1', [lowerEmail]);
-      if (existing.rowCount) return res.status(409).json({ error: 'Email already registered' });
 
-      const password_hash = await hashPassword(password);
-      const id = uuidv4();
-      await query(
-        'INSERT INTO users (id, email, password_hash, name) VALUES ($1, $2, $3, $4)',
-        [id, lowerEmail, password_hash, name || null]
+      // Check if user exists
+      const existing = await query('SELECT id FROM users WHERE email=$1', [email]);
+      if (existing.rows.length > 0) {
+        return res.status(400).json({ error: 'Email already registered' });
+      }
+
+      // Hash password
+      const hashedPassword = await bcrypt.hash(password, 12);
+
+      // Generate agentUserId for Google Home
+      const agentUserId = `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+      // Insert user
+      const result = await query(
+        `INSERT INTO users (email, password_hash, name, agent_user_id, created_at) 
+         VALUES ($1, $2, $3, $4, NOW()) 
+         RETURNING id, email, name, agent_user_id`,
+        [email, hashedPassword, name, agentUserId]
       );
 
-      const accessToken = signAccessToken({ id, email: lowerEmail });
-      const refreshToken = signRefreshToken({ id, email: lowerEmail });
-      return res.status(201).json({ user: { id, email: lowerEmail, name: name || null }, accessToken, refreshToken });
+      const user = result.rows[0];
+
+      // Generate JWT token
+      const token = generateToken({
+        sub: user.id,
+        email: user.email,
+        agentUserId: user.agent_user_id
+      });
+
+      res.status(201).json({
+        message: 'User registered successfully',
+        user: {
+          id: user.id,
+          email: user.email,
+          name: user.name
+        },
+        token
+      });
     } catch (err) {
-      return next(err);
+      console.error('Signup error:', err);
+      res.status(500).json({ error: 'Registration failed' });
     }
   }
 );
 
+// Login endpoint
 router.post(
-  '/signin',
-  [body('email').isEmail(), body('password').isString()],
-  async (req, res, next) => {
+  '/login',
+  [
+    body('email').isEmail().normalizeEmail(),
+    body('password').notEmpty()
+  ],
+  async (req, res) => {
     try {
       const errors = validationResult(req);
-      if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
+
       const { email, password } = req.body;
-      const lowerEmail = String(email).toLowerCase();
 
-      const { rows } = await query('SELECT id, email, password_hash, name FROM users WHERE email = $1', [lowerEmail]);
-      if (!rows.length) return res.status(401).json({ error: 'Invalid credentials' });
+      const result = await query(
+        'SELECT id, email, password_hash, name, agent_user_id FROM users WHERE email=$1',
+        [email]
+      );
 
-      const user = rows[0];
-      const ok = user.password_hash && (await comparePassword(password, user.password_hash));
-      if (!ok) return res.status(401).json({ error: 'Invalid credentials' });
+      if (result.rows.length === 0) {
+        return res.status(401).json({ error: 'Invalid email or password' });
+      }
 
-      const accessToken = signAccessToken({ id: user.id, email: user.email });
-      const refreshToken = signRefreshToken({ id: user.id, email: user.email });
-      return res.json({ user: { id: user.id, email: user.email, name: user.name }, accessToken, refreshToken });
+      const user = result.rows[0];
+      const match = await bcrypt.compare(password, user.password_hash);
+
+      if (!match) {
+        return res.status(401).json({ error: 'Invalid email or password' });
+      }
+
+      // Update last login
+      await query('UPDATE users SET last_login=NOW() WHERE id=$1', [user.id]);
+
+      // Generate JWT token
+      const token = generateToken({
+        sub: user.id,
+        email: user.email,
+        agentUserId: user.agent_user_id
+      });
+
+      res.json({
+        message: 'Login successful',
+        user: {
+          id: user.id,
+          email: user.email,
+          name: user.name
+        },
+        token
+      });
     } catch (err) {
-      return next(err);
+      console.error('Login error:', err);
+      res.status(500).json({ error: 'Login failed' });
     }
   }
 );
 
-router.post('/google', [body('idToken').isString()], async (req, res, next) => {
+// Get current user profile
+router.get('/me', requireAuth, async (req, res) => {
   try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
-    const { idToken } = req.body;
+    const result = await query(
+      'SELECT id, email, name, agent_user_id, created_at FROM users WHERE id=$1',
+      [req.userId]
+    );
 
-    const ticket = await googleClient.verifyIdToken({ idToken, audience: process.env.GOOGLE_CLIENT_ID });
-    const payload = ticket.getPayload();
-    const email = String(payload.email).toLowerCase();
-    const name = payload.name || null;
-
-    let { rows } = await query('SELECT id, email, name FROM users WHERE email = $1', [email]);
-    let user;
-    if (!rows.length) {
-      const id = uuidv4();
-      await query('INSERT INTO users (id, email, password_hash, name) VALUES ($1,$2,$3,$4)', [id, email, null, name]);
-      user = { id, email, name };
-    } else {
-      user = rows[0];
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
     }
 
-    const accessToken = signAccessToken({ id: user.id, email: user.email });
-    const refreshToken = signRefreshToken({ id: user.id, email: user.email });
-    return res.json({ user, accessToken, refreshToken });
+    res.json({ user: result.rows[0] });
   } catch (err) {
-    return next(err);
+    console.error('Get user error:', err);
+    res.status(500).json({ error: 'Failed to fetch user data' });
   }
 });
 
-router.post('/refresh', [body('refreshToken').isString()], async (req, res, next) => {
+// Update user profile
+router.put('/me', requireAuth, [
+  body('name').optional().trim().notEmpty()
+], async (req, res) => {
   try {
     const errors = validationResult(req);
-    if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
-    const { refreshToken } = req.body;
-    let payload;
-    try {
-      payload = verifyToken(refreshToken);
-      if (payload.type !== 'refresh') throw new Error('Not a refresh token');
-    } catch (e) {
-      return res.status(401).json({ error: 'Invalid refresh token' });
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
     }
-    const accessToken = signAccessToken({ id: payload.id, email: payload.email });
-    const newRefreshToken = signRefreshToken({ id: payload.id, email: payload.email });
-    return res.json({ accessToken, refreshToken: newRefreshToken });
+
+    const { name } = req.body;
+    
+    const result = await query(
+      'UPDATE users SET name=$1 WHERE id=$2 RETURNING id, email, name',
+      [name, req.userId]
+    );
+
+    res.json({ 
+      message: 'Profile updated',
+      user: result.rows[0] 
+    });
   } catch (err) {
-    return next(err);
+    console.error('Update user error:', err);
+    res.status(500).json({ error: 'Failed to update profile' });
   }
 });
 
-router.get('/me', async (req, res, next) => {
+// Change password
+router.post('/change-password', requireAuth, [
+  body('currentPassword').notEmpty(),
+  body('newPassword').isLength({ min: 8 })
+], async (req, res) => {
   try {
-    const header = req.headers.authorization || '';
-    const token = header.startsWith('Bearer ') ? header.slice(7) : null;
-    if (!token) return res.status(401).json({ error: 'Missing token' });
-    let payload;
-    try {
-      payload = verifyToken(token);
-    } catch (e) {
-      return res.status(401).json({ error: 'Invalid token' });
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
     }
-    const { rows } = await query('SELECT id, email, name FROM users WHERE id=$1', [payload.id]);
-    if (!rows.length) return res.status(404).json({ error: 'User not found' });
-    return res.json(rows[0]);
+
+    const { currentPassword, newPassword } = req.body;
+
+    const result = await query(
+      'SELECT password_hash FROM users WHERE id=$1',
+      [req.userId]
+    );
+
+    const match = await bcrypt.compare(currentPassword, result.rows[0].password_hash);
+    if (!match) {
+      return res.status(401).json({ error: 'Current password is incorrect' });
+    }
+
+    const newHash = await bcrypt.hash(newPassword, 12);
+    await query('UPDATE users SET password_hash=$1 WHERE id=$2', [newHash, req.userId]);
+
+    res.json({ message: 'Password changed successfully' });
   } catch (err) {
-    return next(err);
+    console.error('Change password error:', err);
+    res.status(500).json({ error: 'Failed to change password' });
+  }
+});
+
+// Logout (client-side token removal, but we can log it)
+router.post('/logout', requireAuth, async (req, res) => {
+  try {
+    // You could implement token blacklisting here if needed
+    res.json({ message: 'Logged out successfully' });
+  } catch (err) {
+    console.error('Logout error:', err);
+    res.status(500).json({ error: 'Logout failed' });
   }
 });
 

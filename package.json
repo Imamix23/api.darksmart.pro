@@ -1,26 +1,35 @@
 {
-  "name": "api.darksmart.pro",
+  "name": "darksmart-api",
   "version": "1.0.0",
-  "description": "DarkSmart API server",
+  "description": "DarkSmart Smart Home Platform - Unified Backend & Frontend",
   "main": "server.js",
   "type": "commonjs",
   "scripts": {
-    "dev": "nodemon server.js",
     "start": "node server.js",
+    "dev": "nodemon server.js",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
-    "test": "echo \"No tests specified\" && exit 0"
+    "test": "echo \"No tests specified\" && exit 0",
+    "migrate": "node scripts/migrate.js"
   },
-  "keywords": [],
-  "author": "",
+  "keywords": [
+    "smart-home",
+    "google-home",
+    "iot",
+    "oauth2",
+    "rest-api"
+  ],
+  "author": "DarkSmart",
   "license": "MIT",
   "dependencies": {
+    "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
-    "express-session": "^1.18.0",
+    "express-validator": "^7.0.1",
     "helmet": "^7.1.0",
+    "jsonwebtoken": "^9.0.2",
     "morgan": "^1.10.0",
     "pg": "^8.13.1"
   },
@@ -32,6 +41,7 @@
     "prettier": "^3.3.3"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
   }
 }

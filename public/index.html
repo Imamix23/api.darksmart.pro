@@ -1,0 +1,579 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DarkSmart - Smart Home Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        /* Auth Pages */
+        .auth-page {
+            display: none;
+            min-height: 100vh;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .auth-page.active {
+            display: flex;
+        }
+
+        .auth-card {
+            background: white;
+            padding: 3rem;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            width: 100%;
+            max-width: 440px;
+        }
+
+        .auth-card h1 {
+            font-size: 2rem;
+            margin-bottom: 0.5rem;
+            color: #1a202c;
+        }
+
+        .auth-card p {
+            color: #718096;
+            margin-bottom: 2rem;
+        }
+
+        .form-group {
+            margin-bottom: 1.5rem;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 0.5rem;
+            color: #2d3748;
+            font-weight: 500;
+        }
+
+        .form-group input {
+            width: 100%;
+            padding: 0.875rem;
+            border: 2px solid #e2e8f0;
+            border-radius: 10px;
+            font-size: 1rem;
+            transition: border-color 0.2s;
+        }
+
+        .form-group input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .btn {
+            width: 100%;
+            padding: 0.875rem;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 30px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .error-message {
+            color: #e53e3e;
+            background: #fff5f5;
+            padding: 0.75rem;
+            border-radius: 8px;
+            margin-bottom: 1rem;
+            display: none;
+        }
+
+        .error-message.show {
+            display: block;
+        }
+
+        .link {
+            text-align: center;
+            margin-top: 1.5rem;
+            color: #4a5568;
+        }
+
+        .link a {
+            color: #667eea;
+            text-decoration: none;
+            font-weight: 600;
+        }
+
+        .link a:hover {
+            text-decoration: underline;
+        }
+
+        /* Dashboard */
+        .dashboard {
+            display: none;
+        }
+
+        .dashboard.active {
+            display: block;
+        }
+
+        .header {
+            background: white;
+            padding: 1.5rem 2rem;
+            border-radius: 16px;
+            margin-bottom: 2rem;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .header h1 {
+            font-size: 1.75rem;
+            color: #1a202c;
+        }
+
+        .header .user-info {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .btn-logout {
+            padding: 0.5rem 1.5rem;
+            background: #e53e3e;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+        }
+
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .stat-card {
+            background: white;
+            padding: 1.5rem;
+            border-radius: 16px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+        }
+
+        .stat-card h3 {
+            color: #718096;
+            font-size: 0.9rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .stat-card .value {
+            font-size: 2rem;
+            font-weight: bold;
+            color: #667eea;
+        }
+
+        .section {
+            background: white;
+            padding: 2rem;
+            border-radius: 16px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+            margin-bottom: 2rem;
+        }
+
+        .section h2 {
+            font-size: 1.5rem;
+            margin-bottom: 1.5rem;
+            color: #1a202c;
+        }
+
+        .devices-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 1.5rem;
+        }
+
+        .device-card {
+            background: #f7fafc;
+            padding: 1.5rem;
+            border-radius: 12px;
+            border: 2px solid #e2e8f0;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .device-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 8px 20px rgba(0,0,0,0.1);
+        }
+
+        .device-card h3 {
+            font-size: 1.1rem;
+            margin-bottom: 0.5rem;
+            color: #2d3748;
+        }
+
+        .device-card .type {
+            color: #718096;
+            font-size: 0.85rem;
+            margin-bottom: 1rem;
+        }
+
+        .device-status {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin-top: 1rem;
+        }
+
+        .status-indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #48bb78;
+        }
+
+        .status-indicator.offline {
+            background: #e53e3e;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 3rem;
+            color: #718096;
+        }
+
+        .empty-state svg {
+            width: 80px;
+            height: 80px;
+            margin-bottom: 1rem;
+            opacity: 0.3;
+        }
+    </style>
+</head>
+<body>
+    <!-- Login Page -->
+    <div id="loginPage" class="auth-page active">
+        <div class="auth-card">
+            <h1>🏠 Welcome Back</h1>
+            <p>Sign in to your DarkSmart account</p>
+            
+            <div id="loginError" class="error-message"></div>
+            
+            <form id="loginForm">
+                <div class="form-group">
+                    <label for="loginEmail">Email</label>
+                    <input type="email" id="loginEmail" required autocomplete="email">
+                </div>
+                <div class="form-group">
+                    <label for="loginPassword">Password</label>
+                    <input type="password" id="loginPassword" required autocomplete="current-password">
+                </div>
+                <button type="submit" class="btn" id="loginBtn">Sign In</button>
+            </form>
+            
+            <div class="link">
+                Don't have an account? <a href="#" onclick="showSignup(); return false;">Sign up</a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Signup Page -->
+    <div id="signupPage" class="auth-page">
+        <div class="auth-card">
+            <h1>🎉 Get Started</h1>
+            <p>Create your DarkSmart account</p>
+            
+            <div id="signupError" class="error-message"></div>
+            
+            <form id="signupForm">
+                <div class="form-group">
+                    <label for="signupName">Name</label>
+                    <input type="text" id="signupName" required autocomplete="name">
+                </div>
+                <div class="form-group">
+                    <label for="signupEmail">Email</label>
+                    <input type="email" id="signupEmail" required autocomplete="email">
+                </div>
+                <div class="form-group">
+                    <label for="signupPassword">Password</label>
+                    <input type="password" id="signupPassword" required autocomplete="new-password" minlength="8">
+                </div>
+                <button type="submit" class="btn" id="signupBtn">Create Account</button>
+            </form>
+            
+            <div class="link">
+                Already have an account? <a href="#" onclick="showLogin(); return false;">Sign in</a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Dashboard -->
+    <div id="dashboard" class="dashboard">
+        <div class="container">
+            <div class="header">
+                <h1>🏠 DarkSmart Dashboard</h1>
+                <div class="user-info">
+                    <span id="userName"></span>
+                    <button class="btn-logout" onclick="logout()">Logout</button>
+                </div>
+            </div>
+
+            <div class="stats">
+                <div class="stat-card">
+                    <h3>Total Devices</h3>
+                    <div class="value" id="totalDevices">0</div>
+                </div>
+                <div class="stat-card">
+                    <h3>Online Devices</h3>
+                    <div class="value" id="onlineDevices">0</div>
+                </div>
+                <div class="stat-card">
+                    <h3>Automations</h3>
+                    <div class="value" id="totalAutomations">0</div>
+                </div>
+            </div>
+
+            <div class="section">
+                <h2>Your Devices</h2>
+                <div id="devicesContainer" class="devices-grid"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = window.location.origin;
+        let authToken = localStorage.getItem('authToken');
+
+        // Check auth on load
+        if (authToken) {
+            verifyToken();
+        }
+
+        // Login
+        document.getElementById('loginForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const btn = document.getElementById('loginBtn');
+            const error = document.getElementById('loginError');
+            
+            btn.disabled = true;
+            btn.textContent = 'Signing in...';
+            error.classList.remove('show');
+
+            const email = document.getElementById('loginEmail').value;
+            const password = document.getElementById('loginPassword').value;
+
+            try {
+                const response = await fetch(`${API_BASE}/auth/login`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, password })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    localStorage.setItem('authToken', data.token);
+                    authToken = data.token;
+                    showDashboard(data.user);
+                } else {
+                    error.textContent = data.error || 'Login failed';
+                    error.classList.add('show');
+                }
+            } catch (err) {
+                error.textContent = 'Network error. Please try again.';
+                error.classList.add('show');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Sign In';
+            }
+        });
+
+        // Signup
+        document.getElementById('signupForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const btn = document.getElementById('signupBtn');
+            const error = document.getElementById('signupError');
+            
+            btn.disabled = true;
+            btn.textContent = 'Creating account...';
+            error.classList.remove('show');
+
+            const name = document.getElementById('signupName').value;
+            const email = document.getElementById('signupEmail').value;
+            const password = document.getElementById('signupPassword').value;
+
+            try {
+                const response = await fetch(`${API_BASE}/auth/signup`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, email, password })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    localStorage.setItem('authToken', data.token);
+                    authToken = data.token;
+                    showDashboard(data.user);
+                } else {
+                    error.textContent = data.error || 'Signup failed';
+                    error.classList.add('show');
+                }
+            } catch (err) {
+                error.textContent = 'Network error. Please try again.';
+                error.classList.add('show');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Create Account';
+            }
+        });
+
+        async function verifyToken() {
+            try {
+                const response = await fetch(`${API_BASE}/auth/me`, {
+                    headers: { 'Authorization': `Bearer ${authToken}` }
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    showDashboard(data.user);
+                } else {
+                    localStorage.removeItem('authToken');
+                    authToken = null;
+                }
+            } catch (err) {
+                console.error('Token verification failed:', err);
+            }
+        }
+
+        async function showDashboard(user) {
+            document.getElementById('loginPage').classList.remove('active');
+            document.getElementById('signupPage').classList.remove('active');
+            document.getElementById('dashboard').classList.add('active');
+            document.getElementById('userName').textContent = user.name;
+
+            await loadDevices();
+            await loadAutomations();
+        }
+
+        async function loadDevices() {
+            try {
+                const response = await fetch(`${API_BASE}/api/devices`, {
+                    headers: { 'Authorization': `Bearer ${authToken}` }
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    const devices = data.devices;
+                    
+                    document.getElementById('totalDevices').textContent = devices.length;
+                    
+                    const online = devices.filter(d => {
+                        const state = typeof d.state === 'string' ? JSON.parse(d.state) : d.state;
+                        return state?.online;
+                    }).length;
+                    document.getElementById('onlineDevices').textContent = online;
+
+                    renderDevices(devices);
+                }
+            } catch (err) {
+                console.error('Load devices failed:', err);
+            }
+        }
+
+        async function loadAutomations() {
+            try {
+                const response = await fetch(`${API_BASE}/api/automations`, {
+                    headers: { 'Authorization': `Bearer ${authToken}` }
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    document.getElementById('totalAutomations').textContent = data.automations.length;
+                }
+            } catch (err) {
+                console.error('Load automations failed:', err);
+            }
+        }
+
+        function renderDevices(devices) {
+            const container = document.getElementById('devicesContainer');
+            
+            if (devices.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"></path>
+                        </svg>
+                        <h3>No devices yet</h3>
+                        <p>Connect your smart home devices to get started</p>
+                    </div>
+                `;
+                return;
+            }
+
+            container.innerHTML = devices.map(device => {
+                const state = typeof device.state === 'string' ? JSON.parse(device.state) : device.state;
+                const isOnline = state?.online || false;
+                const deviceType = device.type.split('.').pop().toLowerCase();
+                
+                return `
+                    <div class="device-card">
+                        <h3>${device.name}</h3>
+                        <div class="type">${deviceType}</div>
+                        <div class="device-status">
+                            <div class="status-indicator ${isOnline ? '' : 'offline'}"></div>
+                            <span>${isOnline ? 'Online' : 'Offline'}</span>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function showLogin() {
+            document.getElementById('signupPage').classList.remove('active');
+            document.getElementById('loginPage').classList.add('active');
+        }
+
+        function showSignup() {
+            document.getElementById('loginPage').classList.remove('active');
+            document.getElementById('signupPage').classList.add('active');
+        }
+
+        function logout() {
+            localStorage.removeItem('authToken');
+            authToken = null;
+            document.getElementById('dashboard').classList.remove('active');
+            document.getElementById('loginPage').classList.add('active');
+        }
+    </script>
+</body>
+</html>

@@ -167,9 +167,13 @@ function handleSync(userId, requestId) {
 }
 
 // Handle QUERY intent - return current state for requested devices
-function handleQuery(userId, requestId, devices) {
-  const deviceIds = devices[0].ids;
+function handleQuery(userId, requestId, devices = []) {
   const responseDevices = {};
+
+  // Normalize input: Google sends an array of device objects with "id" keys
+  const deviceIds = Array.isArray(devices)
+    ? devices.map(d => d.id || d.ids).flat().filter(Boolean)
+    : [];
 
   deviceIds.forEach(deviceId => {
     const state = deviceStates.get(deviceId);
@@ -184,12 +188,13 @@ function handleQuery(userId, requestId, devices) {
   });
 
   return {
-    requestId: requestId,
+    requestId,
     payload: {
       devices: responseDevices
     }
   };
 }
+
 
 // Handle EXECUTE intent - execute commands on devices
 function handleExecute(userId, requestId, commands) {

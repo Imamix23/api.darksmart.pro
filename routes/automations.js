@@ -1,95 +1,183 @@
 const express = require('express');
-const { body, param, validationResult } = require('express-validator');
-const { v4: uuidv4 } = require('uuid');
-const auth = require('../middleware/auth');
-const { query } = require('../db');
+const { body, validationResult } = require('express-validator');
+const { query } = require('../database');
+const { requireAuth } = require('../middleware/auth');
 
 const router = express.Router();
 
-router.use(auth());
-
-router.post(
-  '/',
-  [
-    body('name').isString(),
-    body('trigger').isObject(),
-    body('action').isObject(),
-    body('conditions').optional().isObject(),
-    body('enabled').optional().isBoolean(),
-  ],
-  async (req, res, next) => {
-    try {
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
-      const id = uuidv4();
-      const { name, trigger, action, conditions = {}, enabled = true } = req.body;
-      await query(
-        'INSERT INTO automations (id, user_id, name, trigger, action, conditions, enabled) VALUES ($1,$2,$3,$4,$5,$6,$7)',
-        [id, req.user.id, name, trigger, action, conditions, enabled]
-      );
-      res.status(201).json({ id, user_id: req.user.id, name, trigger, action, conditions, enabled });
-    } catch (err) {
-      next(err);
-    }
-  }
-);
-
-router.get('/', async (req, res, next) => {
+// Get all automations for user
+router.get('/', requireAuth, async (req, res) => {
   try {
-    const { rows } = await query('SELECT * FROM automations WHERE user_id=$1 ORDER BY created_at DESC NULLS LAST', [
-      req.user.id,
-    ]);
-    res.json(rows);
+    const result = await query(
+      `SELECT * FROM automations WHERE user_id=$1 ORDER BY created_at DESC`,
+      [req.userId]
+    );
+    res.json({ automations: result.rows });
   } catch (err) {
-    next(err);
+    console.error('Get automations error:', err);
+    res.status(500).json({ error: 'Failed to fetch automations' });
   }
 });
 
-router.patch(
-  '/:id',
-  [param('id').isString(), body().custom((v) => typeof v === 'object' && v !== null)],
-  async (req, res, next) => {
-    try {
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
-      const { id } = req.params;
-
-      const { rows: owns } = await query('SELECT id FROM automations WHERE id=$1 AND user_id=$2', [
-        id,
-        req.user.id,
-      ]);
-      if (!owns.length) return res.status(404).json({ error: 'Automation not found' });
-
-      const allowed = ['name', 'trigger', 'action', 'conditions', 'enabled'];
-      const sets = [];
-      const values = [];
-      let i = 1;
-      for (const key of allowed) {
-        if (key in req.body) {
-          sets.push(`${key}=$${i++}`);
-          values.push(req.body[key]);
-        }
-      }
-      if (!sets.length) return res.status(400).json({ error: 'No updatable fields provided' });
-      values.push(id, req.user.id);
-      await query(`UPDATE automations SET ${sets.join(', ')}, updated_at=NOW() WHERE id=$${i++} AND user_id=$${i}`, values);
-
-      const { rows } = await query('SELECT * FROM automations WHERE id=$1', [id]);
-      res.json(rows[0]);
-    } catch (err) {
-      next(err);
-    }
-  }
-);
-
-router.delete('/:id', [param('id').isString()], async (req, res, next) => {
+// Get single automation
+router.get('/:id', requireAuth, async (req, res) => {
   try {
-    const { id } = req.params;
-    const { rowCount } = await query('DELETE FROM automations WHERE id=$1 AND user_id=$2', [id, req.user.id]);
-    if (!rowCount) return res.status(404).json({ error: 'Automation not found' });
-    res.status(204).send();
+    const result = await query(
+      'SELECT * FROM automations WHERE id=$1 AND user_id=$2',
+      [req.params.id, req.userId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Automation not found' });
+    }
+
+    res.json({ automation: result.rows[0] });
   } catch (err) {
-    next(err);
+    console.error('Get automation error:', err);
+    res.status(500).json({ error: 'Failed to fetch automation' });
+  }
+});
+
+// Create automation
+router.post('/', requireAuth, [
+  body('name').trim().notEmpty(),
+  body('trigger').isObject(),
+  body('actions').isArray().notEmpty()
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    const { name, description, trigger, conditions, actions, enabled } = req.body;
+
+    const result = await query(
+      `INSERT INTO automations (user_id, name, description, trigger, conditions, actions, enabled, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+       RETURNING *`,
+      [
+        req.userId,
+        name,
+        description || null,
+        JSON.stringify(trigger),
+        JSON.stringify(conditions || []),
+        JSON.stringify(actions),
+        enabled !== false
+      ]
+    );
+
+    res.status(201).json({
+      message: 'Automation created',
+      automation: result.rows[0]
+    });
+  } catch (err) {
+    console.error('Create automation error:', err);
+    res.status(500).json({ error: 'Failed to create automation' });
+  }
+});
+
+// Update automation
+router.put('/:id', requireAuth, async (req, res) => {
+  try {
+    const { name, description, trigger, conditions, actions, enabled } = req.body;
+
+    const updates = [];
+    const values = [];
+    let paramIndex = 1;
+
+    if (name) {
+      updates.push(`name=$${paramIndex++}`);
+      values.push(name);
+    }
+    if (description !== undefined) {
+      updates.push(`description=$${paramIndex++}`);
+      values.push(description);
+    }
+    if (trigger) {
+      updates.push(`trigger=$${paramIndex++}`);
+      values.push(JSON.stringify(trigger));
+    }
+    if (conditions) {
+      updates.push(`conditions=$${paramIndex++}`);
+      values.push(JSON.stringify(conditions));
+    }
+    if (actions) {
+      updates.push(`actions=$${paramIndex++}`);
+      values.push(JSON.stringify(actions));
+    }
+    if (enabled !== undefined) {
+      updates.push(`enabled=$${paramIndex++}`);
+      values.push(enabled);
+    }
+
+    if (updates.length === 0) {
+      return res.status(400).json({ error: 'No fields to update' });
+    }
+
+    values.push(req.params.id, req.userId);
+
+    const result = await query(
+      `UPDATE automations SET ${updates.join(', ')}
+       WHERE id=$${paramIndex++} AND user_id=$${paramIndex++}
+       RETURNING *`,
+      values
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Automation not found' });
+    }
+
+    res.json({
+      message: 'Automation updated',
+      automation: result.rows[0]
+    });
+  } catch (err) {
+    console.error('Update automation error:', err);
+    res.status(500).json({ error: 'Failed to update automation' });
+  }
+});
+
+// Toggle automation enabled state
+router.patch('/:id/toggle', requireAuth, async (req, res) => {
+  try {
+    const result = await query(
+      `UPDATE automations SET enabled = NOT enabled
+       WHERE id=$1 AND user_id=$2
+       RETURNING *`,
+      [req.params.id, req.userId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Automation not found' });
+    }
+
+    res.json({
+      message: 'Automation toggled',
+      automation: result.rows[0]
+    });
+  } catch (err) {
+    console.error('Toggle automation error:', err);
+    res.status(500).json({ error: 'Failed to toggle automation' });
+  }
+});
+
+// Delete automation
+router.delete('/:id', requireAuth, async (req, res) => {
+  try {
+    const result = await query(
+      'DELETE FROM automations WHERE id=$1 AND user_id=$2 RETURNING id',
+      [req.params.id, req.userId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Automation not found' });
+    }
+
+    res.json({ message: 'Automation deleted' });
+  } catch (err) {
+    console.error('Delete automation error:', err);
+    res.status(500).json({ error: 'Failed to delete automation' });
   }
 });
 

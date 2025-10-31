@@ -1,14 +1,57 @@
 const jwt = require('jsonwebtoken');
 
-const ACCESS_TTL = process.env.JWT_ACCESS_TTL || '1h';
-const REFRESH_TTL = process.env.JWT_REFRESH_TTL || '30d';
+const JWT_SECRET = process.env.JWT_SECRET;
 
-const signAccessToken = (payload) =>
-  jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: ACCESS_TTL, algorithm: 'HS256' });
+if (!JWT_SECRET) {
+  throw new Error('JWT_SECRET environment variable is required');
+}
 
-const signRefreshToken = (payload) =>
-  jwt.sign({ ...payload, type: 'refresh' }, process.env.JWT_SECRET, { expiresIn: REFRESH_TTL, algorithm: 'HS256' });
+/**
+ * Generate a JWT token
+ * @param {Object} payload - Token payload
+ * @param {number} expiresIn - Expiration time in seconds (default: 1 hour)
+ * @returns {string} JWT token
+ */
+function generateToken(payload, expiresIn = 3600) {
+  return jwt.sign(
+    {
+      ...payload,
+      iat: Math.floor(Date.now() / 1000),
+      exp: Math.floor(Date.now() / 1000) + expiresIn
+    },
+    JWT_SECRET
+  );
+}
 
-const verifyToken = (token) => jwt.verify(token, process.env.JWT_SECRET);
+/**
+ * Verify and decode a JWT token
+ * @param {string} token - JWT token to verify
+ * @returns {Object|null} Decoded payload or null if invalid
+ */
+function verifyToken(token) {
+  try {
+    return jwt.verify(token, JWT_SECRET);
+  } catch (err) {
+    console.error('JWT verification failed:', err.message);
+    return null;
+  }
+}
 
-module.exports = { signAccessToken, signRefreshToken, verifyToken, ACCESS_TTL, REFRESH_TTL };
+/**
+ * Decode token without verification (for inspection only)
+ * @param {string} token - JWT token
+ * @returns {Object|null} Decoded payload or null
+ */
+function decodeToken(token) {
+  try {
+    return jwt.decode(token);
+  } catch (err) {
+    return null;
+  }
+}
+
+module.exports = {
+  generateToken,
+  verifyToken,
+  decodeToken
+};

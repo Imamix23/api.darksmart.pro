@@ -2,7 +2,6 @@ const { Pool } = require('pg');
 const crypto = require('crypto');
 require('dotenv').config();
 
-// Retry/backoff configuration
 const DEFAULT_MAX_RETRIES = Number(process.env.PG_MAX_RETRIES || 5);
 const DEFAULT_INITIAL_DELAY_MS = Number(process.env.PG_INITIAL_DELAY_MS || 500);
 const DEFAULT_MAX_DELAY_MS = Number(process.env.PG_MAX_DELAY_MS || 10000);
