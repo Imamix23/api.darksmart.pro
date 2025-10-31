@@ -2,24 +2,57 @@ const { Pool } = require('pg');
 const crypto = require('crypto');
 require('dotenv').config();
 
+// Retry/backoff configuration
 const DEFAULT_MAX_RETRIES = Number(process.env.PG_MAX_RETRIES || 5);
 const DEFAULT_INITIAL_DELAY_MS = Number(process.env.PG_INITIAL_DELAY_MS || 500);
 const DEFAULT_MAX_DELAY_MS = Number(process.env.PG_MAX_DELAY_MS || 10000);
 
+// Build connection config from either DATABASE_URL or discrete vars
 const databaseUrl = process.env.DATABASE_URL || '';
-
 if (!databaseUrl) {
-  console.warn('[db] DATABASE_URL not set. Define it in your .env or environment variables.');
+  console.warn('[db] DATABASE_URL not set. Falling back to discrete DB_* variables.');
 }
 
-const pool = new Pool({
-  connectionString: databaseUrl,
-  // Accept self-signed certs if running in local/docker without SSL
-  ssl: process.env.PGSSL === 'require' ? { rejectUnauthorized: false } : false,
-  max: Number(process.env.PG_POOL_MAX || 10),
-  idleTimeoutMillis: Number(process.env.PG_IDLE_TIMEOUT || 30000),
-  connectionTimeoutMillis: Number(process.env.PG_CONN_TIMEOUT || 5000)
-});
+// Validate and normalize discrete vars if no DATABASE_URL
+let poolConfig;
+if (databaseUrl) {
+  poolConfig = {
+    connectionString: databaseUrl
+  };
+} else {
+  const user = process.env.DB_USER;
+  const password = process.env.DB_PASSWORD;
+  const host = process.env.DB_HOST || 'localhost';
+  const parsedPort = Number(process.env.DB_PORT);
+  const port = Number.isFinite(parsedPort) ? parsedPort : 5432;
+  const database = process.env.DB_NAME;
+
+  if (!user || !database) {
+    throw new Error('[db] Missing required DB_USER or DB_NAME when DATABASE_URL is not set.');
+  }
+  if (password === undefined) {
+    console.warn('[db] DB_PASSWORD is undefined. Set it in your .env');
+  } else if (typeof password !== 'string') {
+    // Force to string to satisfy pg client and avoid SASL error
+    console.warn('[db] Coercing DB_PASSWORD to string to satisfy driver.');
+  }
+
+  poolConfig = {
+    user,
+    ...(password !== undefined ? { password: String(password) } : {}),
+    host,
+    port,
+    database
+  };
+}
+
+// Common pool options
+poolConfig.ssl = process.env.PGSSL === 'require' ? { rejectUnauthorized: false } : false;
+poolConfig.max = Number(process.env.PG_POOL_MAX || 10);
+poolConfig.idleTimeoutMillis = Number(process.env.PG_IDLE_TIMEOUT || 30000);
+poolConfig.connectionTimeoutMillis = Number(process.env.PG_CONN_TIMEOUT || 5000);
+
+const pool = new Pool(poolConfig);
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
